@@ -1,0 +1,291 @@
+# OYEU-S
+# ORMAN YANGINI ERKEN UYARI SİSTEMİ
+**TKGM Ada-Parsel Tabanlı Akıllı Sensör Ağı**
+
+---
+
+## 1. PROJE ÖZETİ
+
+Kırıkkale Kent Ormanı'na yerleştirilen numaralandırılmış sensör ağı ile yangınları anında tespit eden ve tam konum bilgisini (ada, parsel, sensör numarası) Bluetooth üzerinden ileten erken uyarı sistemi.
+
+---
+
+## 2. SİSTEM BİLEŞENLERİ
+
+### 2.1. Temel Donanım
+- **Arduino Nano** - Ana kontrolör
+- **MQ-2 Duman Sensörü** - Yangın tespiti
+- **HC-05 Bluetooth Modülü** - Kablosuz iletişim
+- **LED Göstergesi** - Görsel uyarı
+- **Test Butonu** - Manuel kontrol
+- **Solar Panel + Pil** - Güç kaynağı
+
+### 2.2. Teknik Özellikler
+- **7/24 kesintisiz izleme**
+- **30 saniyede bir sistem durumu raporu**
+- **Anında yangın alarmı**
+- **Düşük güç tüketimi**
+- **Kolay kurulum ve bakım**
+
+---
+
+## 3. SENSÖR NUMARALANDIRMA SİSTEMİ
+
+### 3.1. Kod İçi Ayarlar
+```cpp
+// Her sensörde değiştirilecek ayarlar:
+int sensörNo = 3;      // Sensör numarası (1,2,3...)
+int adaNo = 34;        // Ada numarası
+int parselNo = 43;     // Parsel numarası
+String konum = "Kırıkkale Kent Ormanı";
+```
+
+### 3.2. Örnek Sensör Dağılımı
+| Sensör No | Ada | Parsel | Konum Bilgisi |
+|-----------|-----|--------|---------------|
+| 1 | 34 | 43 | Kent Ormanı Giriş |
+| 2 | 34 | 44 | Kent Ormanı Orta |
+| 3 | 35 | 12 | Piknik Alanı |
+| 4 | 35 | 13 | Yürüyüş Yolu |
+| 5 | 36 | 25 | Gölet Çevresi |
+
+---
+
+## 4. ELEKTRONİK BAĞLANTI ŞEMASI
+
+### 4.1. Arduino Nano Bağlantıları
+```
+A0   → MQ-2 Sensör (OUT pin)
+D2   → Test Butonu (GND'ye bağlı)
+D10  → Bluetooth RX
+D11  → Bluetooth TX
+D13  → LED (+)
+5V   → Tüm modül VCC'leri
+GND  → Tüm GND bağlantıları
+```
+
+### 4.2. Bağlantı Notları
+- MQ-2 sensörü ağaç gövdesine 2-3 metre yükseğe
+- Bluetooth modülü açık alana yerleştirilmeli
+- Güneş paneli güneye bakacak şekilde
+- Su geçirmez muhafaza kullanılmalı
+
+---
+
+## 5. MESAJ FORMATLARI
+
+### 5.1. Bağlantı Mesajı
+```
+=== ORMAN YANGIN SENSORU ===
+Sensor: 3. sensör
+Konum: 34 ada 43 parsel
+Durum: AKTIF
+========================
+```
+
+### 5.2. Normal Durum Mesajı
+```
+✅ Normal durum: 34 ada 43 parsel nolu 3. sensör aktif. Duman: 120
+```
+
+### 5.3. YANGIN ALARM MESAJI
+```
+🚨 ACİL YANGIN UYARISI! 34 ada 43 parsel nolu 3. sensör yangın tespit etti. Duman seviyesi: 650
+```
+
+### 5.4. Alarm Devam Mesajı
+```
+⚠️ Yangın alarmı devam ediyor: 34 ada 43 parsel
+```
+
+### 5.5. Test Mesajı
+```
+🔧 TEST MESAJI
+34 ada 43 parsel nolu
+3. sensör test ediliyor...
+Durum: ÇALIŞIYOR
+----------------------------
+```
+
+---
+
+## 6. TAM ÇALIŞAN KAYNAK KODU
+
+```cpp
+// Kırıkkale Kent Ormanı - Sensör No: 3
+#include <SoftwareSerial.h>
+
+#define MQ2_PIN A0
+#define LED_PIN 13
+#define BUTTON_PIN 2
+
+SoftwareSerial bluetooth(10, 11);
+
+// AYARLAR - HER SENSÖRDE DEĞİŞTİR!
+int sensörNo = 3;
+int adaNo = 34;
+int parselNo = 43;
+String konum = "Kırıkkale Kent Ormanı";
+int yanginEsik = 400;
+
+void setup() {
+  pinMode(LED_PIN, OUTPUT);
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+  bluetooth.begin(9600);
+  
+  delay(1000);
+  bluetooth.println("=== ORMAN YANGIN SENSORU ===");
+  bluetooth.println("Sensor: " + String(sensörNo) + ". sensör");
+  bluetooth.println("Konum: " + String(adaNo) + " ada " + String(parselNo) + " parsel");
+  bluetooth.println("Durum: AKTIF");
+  bluetooth.println("========================");
+}
+
+void loop() {
+  if(digitalRead(BUTTON_PIN) == LOW) {
+    testGonder();
+    delay(5000);
+  }
+  
+  int duman = analogRead(MQ2_PIN);
+  
+  if(duman > yanginEsik) {
+    yanginAlarmi(duman);
+  }
+  
+  static unsigned long sonOkuma = 0;
+  if(millis() - sonOkuma > 30000) {
+    normalVeriGonder(duman);
+    sonOkuma = millis();
+  }
+  
+  delay(1000);
+}
+
+void yanginAlarmi(int dumanDegeri) {
+  for(int i=0; i<10; i++) {
+    digitalWrite(LED_PIN, HIGH);
+    delay(200);
+    digitalWrite(LED_PIN, LOW);
+    delay(200);
+  }
+  
+  String alarmMesaji = "🚨 ACİL YANGIN UYARISI! ";
+  alarmMesaji += String(adaNo) + " ada " + String(parselNo) + " parsel nolu ";
+  alarmMesaji += String(sensörNo) + ". sensör yangın tespit etti. ";
+  alarmMesaji += "Duman seviyesi: " + String(dumanDegeri);
+  
+  bluetooth.println(alarmMesaji);
+  
+  for(int i=0; i<18; i++) {
+    digitalWrite(LED_PIN, HIGH);
+    delay(5000);
+    digitalWrite(LED_PIN, LOW);
+    delay(5000);
+    
+    if(i % 3 == 0) {
+      bluetooth.println("⚠️ Yangın alarmı devam ediyor: " + String(adaNo) + " ada " + String(parselNo) + " parsel");
+    }
+  }
+}
+
+void normalVeriGonder(int duman) {
+  String normalMesaj = "✅ Normal durum: ";
+  normalMesaj += String(adaNo) + " ada " + String(parselNo) + " parsel nolu ";
+  normalMesaj += String(sensörNo) + ". sensör aktif. ";
+  normalMesaj += "Duman: " + String(duman);
+  
+  bluetooth.println(normalMesaj);
+}
+
+void testGonder() {
+  bluetooth.println("🔧 TEST MESAJI");
+  bluetooth.println(String(adaNo) + " ada " + String(parselNo) + " parsel nolu");
+  bluetooth.println(String(sensörNo) + ". sensör test ediliyor...");
+  bluetooth.println("Durum: ÇALIŞIYOR");
+  bluetooth.println("----------------------------");
+}
+```
+
+---
+
+## 7. ANDROID UYGULAMASI KULLANIMI
+
+### 7.1. Kurulum Adımları
+1. **Play Store'dan "Arduino Bluetooth Control" indir**
+2. **Bluetooth'u aç ve HC-05 modülüne bağlan**
+3. **Şifre: 1234**
+4. **Bağlantı başarılı mesajını kontrol et**
+
+### 7.2. Mesaj Takibi
+- **Yeşil mesajlar**: Normal durum
+- **Kırmızı mesajlar**: Yangın alarmı  
+- **Mavi mesajlar**: Test ve sistem mesajları
+
+### 7.3. Acil Durum Prosedürü
+```
+ALARM MESAJI GELDİĞİNDE:
+1. Mesajı oku: "34 ada 43 parsel nolu 3. sensör yangın tespit etti"
+2. Hemen 112 Orman Yangın hattını ara
+3. Konumu net şekilde söyle
+4. Diğer sensörleri kontrol et
+```
+
+---
+
+## 8. KURULUM ve BAKIM
+
+### 8.1. Sensör Kurulumu
+1. Kod yükle (sensör numarasını ayarla)
+2. Fiziksel montaj (ağaç gövdesi)
+3. Bluetooth testi
+4. Duman testi (çakmak)
+
+### 8.2. Periyodik Bakım
+- **Haftalık**: Test butonu kontrolü
+- **Aylık**: Sensör temizliği
+- **3 Aylık**: Pil/güneş paneli kontrolü
+- **Yıllık**: Donanım yenileme
+
+### 8.3. Sorun Giderme
+| Problem | Çözüm |
+|---------|--------|
+| Bağlantı yok | Bluetooth eşleştirmeyi kontrol et |
+| Yanlış alarm | Duman eşiğini ayarla (yanginEsik) |
+| Pil bitiyor | Güneş paneli açısını kontrol et |
+
+---
+
+## 9. SİSTEM AVANTAJLARI
+
+### 9.1. Teknik Avantajlar
+- ✅ Gerçek zamanlı izleme
+- ✅ Tam konum bilgisi (ada-parsel)
+- ✅ Düşük maliyet
+- ✅ Kolay ölçeklenebilirlik
+- ✅ Az bakım gereksinimi
+
+### 9.2. Operasyonel Avantajlar
+- ✅ Hızlı müdahale imkanı
+- ✅ Net konum bilgisi
+- ✅ Çoklu sensör koordinasyonu
+- ✅ Yerli ve milli çözüm
+
+---
+
+## 10. SONUÇ
+
+Bu sistem ile Kırıkkale Kent Ormanı'ndaki her bir parsel için:
+- **Anında yangın tespiti**
+- **Tam konum bildirimi** 
+- **Hızlı müdahale imkanı**
+- **Düşük işletme maliyeti**
+
+sağlanmaktadır. Sistemin basit yapısı sayesinde tüm orman alanlarına kolayca yaygınlaştırılabilir.
+
+---
+
+**Teknik Destek ve İletişim:**
+Proje sorumlusu ile sensör numaralandırma ve konumlandırma için koordinasyon sağlanmalıdır.
+
+**⚠️ ÖNEMLİ NOT: Her sensör kurulumunda sensör numarası, ada ve parsel bilgileri güncellenmelidir.**
